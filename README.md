@@ -1,4 +1,4 @@
-This repo is based on https://github.com/facebookresearch/maskrcnn-benchmark
+This repo is based on https://github.com/matterport/Mask_RCNN
 We added the vine.oy file in the samples folder.
 
 # Mask R-CNN for Object Detection and Segmentation

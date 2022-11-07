@@ -37,3 +37,4 @@ dist/
 /output
 /dataset
 /logs
+*.h5
