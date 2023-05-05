@@ -65,7 +65,7 @@ class VineConfig(Config):
 
     # We use a GPU with 12GB memory, which can fit two images.
     # Adjust down if you use a smaller GPU.
-    IMAGES_PER_GPU = 4
+    IMAGES_PER_GPU = 3
 
     # Number of classes (including background)
     NUM_CLASSES = 1 + 1  # Background + vine
@@ -94,6 +94,7 @@ class VineDataset(utils.Dataset):
         # Train or validation dataset?
         assert subset in ["train", "test"]
         dataset_dir = os.path.join(dataset_dir, subset)
+        dataset_dir = dataset_dir+"/"
 
         # Load annotations
         # VGG Image Annotator (up to version 1.6) saves each image in the form:
@@ -111,40 +112,52 @@ class VineDataset(utils.Dataset):
         # }
         # We mostly care about the x and y coordinates of each region
         # Note: In VIA 2.0, regions was changed from a dict to a list.
-        annotations = json.load(open(os.path.join(dataset_dir, "via_region_data.json")))
-        annotations = list(annotations.values())  # don't need the dict keys
+        # annotations = json.load(open(os.path.join(dataset_dir, "via_region_data.json")))
+        # annotations = list(annotations.values())  # don't need the dict keys
 
         # The VIA tool saves images in the JSON even if they don't have any
         # annotations. Skip unannotated images.
         # annotations = [a for a in annotations if a['regions']]
 
         # Add images
-        for a in annotations:
-            # Get the x, y coordinaets of points of the polygons that make up
-            # the outline of each object instance. These are stores in the
-            # shape_attributes (see json format above)
-            # The if condition is needed to support VIA versions 1.x and 2.x.
-            if type(a['regions']) is dict:
-                polygons = [r['shape_attributes'] for r in a['regions'].values()]
-            else:
-                polygons = [r['shape_attributes'] for r in a['regions']] 
+        # for a in annotations:
+        #     # Get the x, y coordinaets of points of the polygons that make up
+        #     # the outline of each object instance. These are stores in the
+        #     # shape_attributes (see json format above)
+        #     # The if condition is needed to support VIA versions 1.x and 2.x.
+        #     if type(a['regions']) is dict:
+        #         polygons = [r['shape_attributes'] for r in a['regions'].values()]
+        #     else:
+        #         polygons = [r['shape_attributes'] for r in a['regions']] 
 
-            # load_mask() needs the image size to convert polygons to masks.
-            # Unfortunately, VIA doesn't include it in JSON, so we must read
-            # the image. This is only managable since the dataset is tiny.
-            image_path = os.path.join(dataset_dir, a['filename'])
-            image = skimage.io.imread(image_path)
-            height, width = image.shape[:2]
-            while len(polygons)<3:
-                polygons.append(polygons[0])
-            if len(polygons)>1:
-                polygons=polygons[:1]
-            self.add_image(
-                "vine",
-                image_id=a['filename'],  # use file name as a unique image id
-                path=image_path,
-                width=width, height=height,
-                polygons=polygons)
+        #     # load_mask() needs the image size to convert polygons to masks.
+        #     # Unfortunately, VIA doesn't include it in JSON, so we must read
+        #     # the image. This is only managable since the dataset is tiny.
+        #     image_path = os.path.join(dataset_dir, a['filename'])
+        #     image = skimage.io.imread(image_path)
+        #     height, width = image.shape[:2]
+        #     while len(polygons)<3:
+        #         polygons.append(polygons[0])
+        #     if len(polygons)>1:
+        #         polygons=polygons[:1]
+        #     self.add_image(
+        #         "vine",
+        #         image_id=a['filename'],  # use file name as a unique image id
+        #         path=image_path,
+        #         width=width, height=height,
+        #         polygons=polygons)
+        dlist=os.listdir(dataset_dir)
+        dlist.sort()
+        for filename in dlist:
+            if filename.endswith(".png") or filename.endswith(".jpg"):
+                image = skimage.io.imread(dataset_dir+filename)
+                height, width = image.shape[:2]
+                self.add_image(
+                    "vine",
+                    image_id=filename,  # use file name as a unique image id
+                    path=dataset_dir+filename,
+                    width=width, height=height,
+                    polygons=[])
 
     def load_mask(self, image_id):
         """Generate instance masks for an image.
@@ -154,6 +167,21 @@ class VineDataset(utils.Dataset):
         class_ids: a 1D array of class IDs of the instance masks.
         """
         # If not a balloon dataset image, delegate to parent class.
+        folder = "images/"
+        if args.cs=="rgb":
+            folder = "images"
+        elif args.cs=="lab":
+            folder = "images_lab"
+        elif args.cs=="luv":
+            folder = "images_luv"
+        elif args.cs=="hls":
+            folder = "images_hls"
+        elif args.cs=="hsv":
+            folder = "images_hsv"
+        elif args.cs=="ycrcb":
+            folder = "images_ycrcb"
+        else:
+            print("Unknown color space.")
         image_info = self.image_info[image_id]
         if image_info["source"] != "vine":
             return super(self.__class__, self).load_mask(image_id)
@@ -169,8 +197,8 @@ class VineDataset(utils.Dataset):
         #     mask[rr, cc, i] = 1
         # print(mask.shape)
         path = image_info["path"]
-        maskgt = cv2.imread(path.replace('images', 'masks')).astype(np.float32)
-        maskgt = cv2.resize(maskgt,(640,480))
+        maskgt = cv2.imread(path.replace(folder, 'masks')).astype(np.float32)
+        # maskgt = cv2.resize(maskgt,(640,480))
         # maskgt = np.moveaxis(maskgt,-1,0)
         # print(mask.shape)
         maskgt=maskgt[:,:,0]
@@ -192,6 +220,26 @@ class VineDataset(utils.Dataset):
 def train(model):
     """Train the model."""
     # Training dataset.
+    path = args.dataset
+    if args.cs=="rgb":
+        path = path
+    elif args.cs=="lab":
+        path = path.replace('images', 'images_lab')
+        # image_input = cv2.cvtColor(image_input, cv2.COLOR_BGR2LAB).astype(np.float32)
+    elif args.cs=="luv":
+        path = path.replace('images', 'images_luv')
+        # image_input = cv2.cvtColor(image_input, cv2.COLOR_BGR2LUV).astype(np.float32)
+    elif args.cs=="hls":
+        path = path.replace('images', 'images_hls')
+        # image_input = cv2.cvtColor(image_input, cv2.COLOR_BGR2HLS).astype(np.float32)
+    elif args.cs=="hsv":
+        path = path.replace('images', 'images_hsv')
+        # image_input = cv2.cvtColor(image_input, cv2.COLOR_BGR2HSV).astype(np.float32)
+    elif args.cs=="ycrcb":
+        path = path.replace('images', 'images_ycrcb')
+        # image_input = cv2.cvtColor(image_input, cv2.COLOR_BGR2YCrCb).astype(np.float32)
+    else:
+        print("Unknown color space.")
     dataset_train = VineDataset()
     dataset_train.load_vine(args.dataset, "train")
     dataset_train.prepare()
@@ -210,7 +258,7 @@ def train(model):
     print("Training network heads")
     model.train(dataset_train, dataset_val,
                 learning_rate=config.LEARNING_RATE,
-                epochs=10,
+                epochs=50,
                 layers='all')
 
 
@@ -332,7 +380,7 @@ def create_mask(model, image_path=None):
         white = black+255
         masknorm = np.where(mask, white, black).astype(np.uint8)
         dirname, basename = os.path.split(image_path)
-        file_name = args.pred_folder+basename[:-4]+"_pred_maskrcnn"+'.jpg'
+        file_name = args.pred_folder+basename#[:-4]+"_pred_maskrcnn"+'.jpg'
         skimage.io.imsave(file_name, masknorm)
         print('Predicting the image took %f seconds (with setup time: %f)'% (stop-start,setuptime))
     else:
@@ -365,7 +413,7 @@ def create_mask(model, image_path=None):
                 black = image*0
                 white = black+255
                 masknorm = np.where(mask, white, black).astype(np.uint8)
-                file_name = args.pred_folder+filename[:-4]+"_pred_maskrcnn"+'.jpg'
+                file_name = args.pred_folder+filename#[:-4]+"_pred_maskrcnn"+'.jpg'
                 skimage.io.imsave(file_name, masknorm)
                 counter+=1
             else:
@@ -403,6 +451,7 @@ if __name__ == '__main__':
     parser.add_argument('--video', required=False,
                         metavar="path or URL to video",
                         help='Video to apply the color splash effect on')
+    parser.add_argument('--cs', dest='cs', default='rgb', type=str, help='color space: rgb, lab, luv, hls, hsv, ycrcb')
     parser.add_argument('--pred_folder', required=False, dest='pred_folder', default='./predicted_images_maskrcnn/', type=str, help='where to save the predicted images.')
     args = parser.parse_args()
 
